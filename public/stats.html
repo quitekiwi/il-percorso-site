@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>Il Percorso — stats</title>
+<style>
+  @font-face{ font-family:'Source Sans 3'; src:url(fonts/source-sans-3-var.woff2) format('woff2'); font-weight:200 900; font-display:swap; }
+  :root{ --page:#F7F4EF; --card:#FFFFFF; --tint:#F1EADF; --ink:#2A2421; --muted:#65584F; --brown:#4A3226; --line:#E2D9CC; --line-strong:#C9BBA6; --red:#8A2A1B; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--page); color:var(--ink); font-family:'Source Sans 3', system-ui, sans-serif; font-size:17px; line-height:1.5; font-variant-numeric:tabular-nums; }
+  :focus-visible{ outline:3px solid var(--brown); outline-offset:2px; }
+  .wrap{ max-width:760px; margin:0 auto; padding:40px 16px 80px; }
+  h1{ font-size:32px; font-weight:650; letter-spacing:-0.02em; margin:0 0 6px; }
+  .note{ color:var(--muted); font-size:15px; margin:0 0 24px; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 2px rgba(42,36,33,.06), 0 4px 14px -6px rgba(42,36,33,.12); padding:20px; margin-bottom:16px; }
+  .lbl{ font-size:16px; font-weight:650; margin:0 0 6px; }
+  label{ font-weight:600; }
+  input, select{ font:inherit; min-height:44px; padding:8px 12px; border:1px solid var(--line-strong); border-radius:6px; background:#fff; color:var(--ink); }
+  button{ font:inherit; font-weight:600; min-height:44px; padding:8px 18px; border:1px solid var(--brown); border-radius:6px; background:var(--brown); color:#fff; cursor:pointer; }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .row input{ flex:1 1 200px; }
+  .big{ display:flex; gap:40px; flex-wrap:wrap; }
+  .big div{ font-size:36px; font-weight:650; line-height:1.1; }
+  .big span{ display:block; font-size:15px; font-weight:400; color:var(--muted); }
+  table{ width:100%; border-collapse:collapse; font-size:16px; }
+  th{ text-align:left; font-size:15px; color:var(--muted); font-weight:650; border-bottom:2px solid var(--line-strong); padding:6px 4px; }
+  th.n, td.n{ text-align:right; }
+  td{ border-bottom:1px solid var(--line); padding:8px 4px; vertical-align:top; }
+  .bar{ height:4px; background:var(--brown); opacity:.35; border-radius:2px; margin-top:4px; }
+  .err{ color:var(--red); font-size:15px; margin:8px 0 0; min-height:1em; }
+  .table-scroll{ overflow-x:auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Stats</h1>
+  <p class="note">Anonymous monthly totals only. No visitor can be identified from anything here.</p>
+
+  <div class="card">
+    <div class="row">
+      <input id="key" type="password" placeholder="Stats password" autocomplete="current-password" aria-label="Stats password">
+      <button id="load" type="button">Show</button>
+    </div>
+    <p class="err" id="err" role="alert"></p>
+  </div>
+
+  <div id="out" hidden>
+    <div class="card row">
+      <label for="month">Month</label>
+      <select id="month"></select>
+    </div>
+    <div class="card big" id="totals"></div>
+    <div class="card">
+      <p class="lbl">Where people are in the process</p>
+      <p style="margin-top:0;font-size:16px;color:var(--muted)">"Opened" = people who expanded the step. "Done" = people who marked it done. A step many people open but few mark done is where the process is hardest.</p>
+      <div class="table-scroll"><table id="steps"></table></div>
+    </div>
+    <div class="card">
+      <p class="lbl">Step lists made, by situation</p>
+      <div class="table-scroll"><table id="paths"></table></div>
+    </div>
+  </div>
+</div>
+
+<script src="packs/italy.js"></script>
+<script>
+const PACK = window.PACK;
+let data = null;
+
+function stepTitle(id){
+  const s = PACK.steps[id];
+  if(!s) return id;
+  const t = typeof s.title === 'string' ? s.title : id;
+  // Two steps can share a title (EU vs non-EU version); say which.
+  return t + (id.endsWith('_eu') ? ' (EU)' : id.endsWith('_noneu') ? ' (non-EU)' : '');
+}
+
+function optionLabel(val){
+  for(const q of PACK.questions){ const o = q.options.find(o=>o.val===val); if(o) return o.short || o.label; }
+  return val;
+}
+
+function render(){
+  const m = document.getElementById('month').value;
+  const c = data.months[m] || {};
+  const get = k => c[k] || 0;
+  const dossiers = Object.keys(c).filter(k=>k.startsWith('dossier:')).reduce((a,k)=>a+c[k],0);
+  document.getElementById('totals').innerHTML =
+    `<div>${get('visit')}<span>Visits</span></div><div>${dossiers}<span>Step lists made</span></div><div>${get('print')}<span>Printed or saved as PDF</span></div>`;
+
+  const ids = [];
+  PACK.paths.forEach(p=>p.steps.forEach(id=>{ if(!ids.includes(id)) ids.push(id); }));
+  const max = Math.max(1, ...ids.map(id=>get('open:'+id)));
+  document.getElementById('steps').innerHTML =
+    '<tr><th>Step</th><th class="n">Opened</th><th class="n">Done</th><th class="n">Checked source</th></tr>' +
+    ids.map(id=>`<tr><td>${stepTitle(id)}<div class="bar" style="width:${Math.round(get('open:'+id)/max*100)}%"></div></td>
+      <td class="n">${get('open:'+id)}</td><td class="n">${get('done:'+id)}</td><td class="n">${get('source:'+id)}</td></tr>`).join('');
+
+  const paths = Object.keys(c).filter(k=>k.startsWith('dossier:')).sort((a,b)=>c[b]-c[a]);
+  document.getElementById('paths').innerHTML = paths.length
+    ? '<tr><th>Situation</th><th class="n">Count</th></tr>' + paths.map(k=>`<tr><td>${k.slice(8).split('-').map(optionLabel).join(' · ')}</td><td class="n">${c[k]}</td></tr>`).join('')
+    : '<tr><td>None yet this month.</td></tr>';
+}
+
+async function load(){
+  const key = document.getElementById('key').value;
+  const err = document.getElementById('err');
+  err.textContent = '';
+  try{
+    const r = await fetch('/api/stats?p=' + PACK.id, { headers: { 'x-stats-key': key } });
+    const j = await r.json();
+    if(!r.ok){ err.textContent = j.error || 'Something went wrong.'; return; }
+    data = j;
+    try{ sessionStorage.setItem('stats-key', key); }catch(e){}
+    const months = Object.keys(j.months).sort().reverse();
+    if(!months.length) months.push(new Date().toISOString().slice(0,7));
+    document.getElementById('month').innerHTML = months.map(m=>`<option>${m}</option>`).join('');
+    document.getElementById('out').hidden = false;
+    render();
+  }catch(e){ err.textContent = 'Could not reach the stats service.'; }
+}
+
+document.getElementById('load').addEventListener('click', load);
+document.getElementById('key').addEventListener('keydown', e=>{ if(e.key==='Enter') load(); });
+document.getElementById('month').addEventListener('change', render);
+try{ const k = sessionStorage.getItem('stats-key'); if(k){ document.getElementById('key').value = k; load(); } }catch(e){}
+</script>
+</body>
+</html>

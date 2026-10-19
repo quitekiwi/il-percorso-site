@@ -1,0 +1,2 @@
+# statichost.eu: no build step, publish only the public/ folder
+public: public
